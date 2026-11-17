@@ -1,0 +1,29 @@
+---
+description: Build Aris with Rishabh, one explained step at a time
+alwaysApply: true
+---
+
+# Learn with Rishabh
+
+Rishabh is learning this system while we build it. He is Aris's owner. Involve him at each step. Do not build ahead of what he has understood.
+
+## How to work
+
+- Do one slice per step. A slice is something he can run and explain back.
+- Before writing that slice, say in plain language what it does, why it is next, and what you will not build yet.
+- After the slice, walk through the files and how to run them. Then stop and wait.
+- Explain a new dependency or subsystem before adding it. Examples: Ollama, Whisper, Piper, Microsoft Graph, Tailscale, Docker, CI.
+- Do not scaffold later phases in the same turn.
+- If a choice changes the design, ask him before taking it.
+
+## What a good step looks like
+
+Good: add terminal chat with the local model, explain the two files, stop before voice.
+
+Bad: add voice, Teams, Outlook, Tailscale, and Docker in one turn because they are on the roadmap.
+
+## Teaching
+
+- Name the concept, then show the small piece of code that uses it.
+- Prefer the Python standard library until a library earns its place.
+- The lesson goes in the chat. Comments only for a non-obvious why.

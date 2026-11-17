@@ -1,0 +1,27 @@
+---
+description: Locked Aris decisions so later work stays on the plan we agreed
+alwaysApply: true
+---
+
+# Aris decisions
+
+Rishabh Sharma owns Aris. The spoken address is Sir.
+
+## Now
+
+- Build and run on this Mac. Ship the same program later to the spare Linux laptop.
+- Spare laptop: Linux, 8 GB RAM, 500 GB SSD. It is the always-on brain.
+- Model: Ollama `qwen2.5:3b` with a short context. A 7B model does not fit that laptop beside voice.
+- Devices reach the brain later through Tailscale. They need internet. They do not need the same Wi-Fi.
+- Current slice: terminal text chat. Voice, Microsoft, phones, and CI are later slices.
+
+## Later, only when that step starts
+
+- Voice: faster-whisper `base` and Piper. Phones are tap-to-talk. The laptop in front of him can listen for "Aris".
+- Microsoft Graph, signed in as Rishabh. Read Outlook and Teams. Send only after he confirms.
+- One device is "speak here" at a time.
+- CI comes after the program runs on the spare laptop.
+
+## Leave alone during the current slice
+
+Do not add Docker, a web UI, Graph, a wake word, or a pipeline while the current slice is still terminal chat.
