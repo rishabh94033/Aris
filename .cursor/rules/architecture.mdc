@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Friday decisions
 
-Rishabh Sharma owns Friday. The spoken address is Sir.
+Rishabh Sharma owns Friday. The spoken address is Sir. Friday is a woman, with a female voice.
 
 ## Now
 
@@ -14,12 +14,12 @@ Rishabh Sharma owns Friday. The spoken address is Sir.
 - Model: Ollama `qwen2.5:3b` with a short context. A 7B model does not fit that laptop beside voice.
 - Devices reach the brain later through Tailscale. They need internet. They do not need the same Wi-Fi.
 - Voice libraries need Python 3.14. The Mac's default `python3` is 3.15, which cannot install them yet, so voice runs from `.venv`.
-- Current slice: voice, plus a web lookup. If Friday does not know a fact, he asks before searching. A following yes or no does not need the name. The lookup is DuckDuckGo, because Google's own API needs a key. Spoken replies use OpenAI gpt-4o-mini-tts when OPENAI_API_KEY is set, and Piper when it is not. Calendar is not connected.
+- Current slice: voice, plus a web lookup. If Friday does not know a fact, she asks before searching. A following yes or no does not need the name. After Friday answers, a line that starts within 10 seconds of her finishing is for her even without the name, so a conversation continues until he is quiet for 10 seconds. The model decides when and what to search: a short example-led prompt answers "search words, or NONE" for each line, and after searching a second prompt answers "these results answer it, or better words". She searches at most 3 times, then answers only from the results. She skips asking when his line already says search, look up, google, or check. The lookup asks Wikipedia, Google News RSS, and Bing RSS at once. DuckDuckGo's HTML search returns an empty bot check from this machine, and Google's own search API is closed to new users. The ear is local Distil-Whisper `distil-large-v3.5`, on the Mac GPU when that is available and on the CPU on the spare laptop. It is free, English, and small enough to sit beside the 3B brain on 8 GB. Spoken replies use OpenAI gpt-4o-mini-tts when OPENAI_API_KEY is set, and the Piper voice Jenny (`en_GB-jenny_dioco-medium`, British female) when it is not. Rishabh chose Jenny from six female samples. Microphone audio stays on the machine. On the Mac, Friday listens with the built-in microphone and speaks through the current output, so a Bluetooth headset never switches to phone-call mode. Calendar is not connected.
 
 ## Later, only when that step starts
 
 - Google Calendar, after he can sign in with a personal Google account.
-- A separate wake-word model, so he can hear the name without transcribing every sound.
+- A separate wake-word model, so she can hear the name without transcribing every sound.
 - Phones are tap-to-talk over Tailscale.
 - Outlook and Teams both need an app in the work tenant, signed in as Rishabh. He cannot register one. Both wait until an admin creates the app. Mail is the first permission to ask for. Teams chat permissions are stricter, not a way around the lock. Send only after he confirms.
 - One device is "speak here" at a time.

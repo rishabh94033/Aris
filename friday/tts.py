@@ -1,6 +1,7 @@
 """Speak with gpt-4o-mini-tts, the text-to-speech model behind ChatGPT voice.
 
-The words Friday says are sent to OpenAI. The microphone audio and the chat model stay on this Mac.
+The words Friday says are sent to OpenAI when a key is set. The microphone
+audio stays on this Mac, and the chat model stays on this Mac.
 """
 
 import io
@@ -14,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-URL = "https://api.openai.com/v1/audio/speech"
+SPEECH_URL = "https://api.openai.com/v1/audio/speech"
 MODEL = "gpt-4o-mini-tts"
 # cedar and marin are OpenAI's recommended voices. cedar is the calmer of the two.
 VOICE = "cedar"
@@ -57,7 +58,7 @@ def gpt_speech(text: str) -> tuple[np.ndarray, int]:
         }
     ).encode()
     request = urllib.request.Request(
-        URL,
+        SPEECH_URL,
         data=body,
         headers={
             "Authorization": f"Bearer {key}",

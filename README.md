@@ -1,6 +1,6 @@
 # Friday
 
-Personal assistant of Rishabh Sharma. He addresses Rishabh as Sir.
+Personal assistant of Rishabh Sharma. She addresses Rishabh as Sir.
 
 ## Decisions
 
@@ -11,7 +11,7 @@ Personal assistant of Rishabh Sharma. He addresses Rishabh as Sir.
 
 ## Where we are
 
-Voice on this Mac. If Friday does not know a fact, he asks, and looks it up only after you agree.
+Voice on this Mac. If Friday does not know a fact, she asks, and looks it up only after you agree.
 
 Still later: Google Calendar, Teams, Outlook, phones, the spare laptop, CI.
 
@@ -25,7 +25,7 @@ From this folder:
 
 Say "exit", or press Ctrl+C, to stop. Typing still works with `.venv/bin/python -m friday`.
 
-The ChatGPT voice needs a key in `.env` in this folder. That file stays off git.
+The ear is local Distil-Whisper `distil-large-v3.5`. It is free and stays on this Mac. The ChatGPT speaking voice needs a key in `.env` in this folder. That file stays off git. Without the key, the voice is Piper's Jenny, a British female voice.
 
 ```bash
 OPENAI_API_KEY=sk-...

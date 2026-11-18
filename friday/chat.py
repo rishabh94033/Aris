@@ -2,235 +2,234 @@
 
 Ollama is a program that runs the model and listens on this Mac at
 http://127.0.0.1:11434. This file sends the chat there and prints the reply.
+
+Before answering, Friday asks the model one small question: does this need a
+web search, and with what words? After searching, she asks it another: do these
+results answer it, or what should she search for instead?
 """
 
 import json
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 
-from friday.persona import CRISP, system_prompt
+from friday.persona import ANSWER, judge_prompt, route_prompt, system_prompt
 from friday.search import web_search
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 # The spare Linux laptop has 8 GB of RAM. This 3B model fits there.
 MODEL = "qwen2.5:3b"
-# Next line is a clearer question, after a search found nothing. No name required.
-RETRY = "?"
-YES_WORDS = {
-    "yes",
-    "yeah",
-    "yep",
-    "sure",
-    "please",
-    "ok",
-    "okay",
-    "go ahead",
-    "do it",
-    "look it up",
-    "google it",
-    "google",
-    "search",
-}
-NO_WORDS = {"no", "nope", "don't", "do not", "cancel", "never mind", "stop"}
+# Ollama unloads an idle model after 5 minutes, and loading it again is the slow first answer.
+KEEP_ALIVE = "30m"
+# Room for the instructions, the recent talk, and up to three sets of search results.
+CONTEXT_TOKENS = 4096
+# Older lines than this are left out of each request, so the instructions are never pushed out.
+RECENT_MESSAGES = 12
+MAX_SEARCHES = 3
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
+# Asking first is Sir's rule, not the model's judgment. His own words can already be the yes.
+_ASKED = re.compile(r"\b(search|look (?:it |that |this )?up|google|check)\b", re.IGNORECASE)
+
+Say = Callable[[str], None]
 
 
-def ask(messages: list[dict]) -> str:
-    """Send the whole conversation so far and return Friday's reply."""
-    body = json.dumps(
-        {
-            "model": MODEL,
-            "messages": messages,
-            "stream": False,
-            "options": {"num_ctx": 2048},
-        }
-    ).encode()
-    request = urllib.request.Request(
+def _request(messages: list[dict], stream: bool, options: dict) -> urllib.request.Request:
+    body = {
+        "model": MODEL,
+        "messages": messages,
+        "stream": stream,
+        "keep_alive": KEEP_ALIVE,
+        "options": {"num_ctx": CONTEXT_TOKENS, **options},
+    }
+    return urllib.request.Request(
         OLLAMA_URL,
-        data=body,
+        data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=180) as response:
-        payload = json.load(response)
-    return payload["message"]["content"].strip()
 
 
-def take_turn(messages: list[dict], text: str) -> str | None:
-    """Append one line from Sir, refresh the clock, and return Friday's reply.
+def ask(messages: list[dict], say: Say | None = None, **options: float) -> str:
+    """Send messages to the model and return its words.
 
-    messages[0] must already be the system prompt.
+    With say, Ollama streams the words a few at a time, and each sentence is
+    handed to say as soon as it is complete.
     """
-    messages.append({"role": "user", "content": text})
-    messages[0] = {"role": "system", "content": system_prompt()}
+    if say is None:
+        with urllib.request.urlopen(_request(messages, False, options), timeout=180) as response:
+            return json.load(response)["message"]["content"].strip()
+
+    words: list[str] = []
+    buffer = ""
+    with urllib.request.urlopen(_request(messages, True, options), timeout=180) as response:
+        for line in response:
+            if not line.strip():
+                continue
+            chunk = json.loads(line)
+            piece = chunk.get("message", {}).get("content", "")
+            words.append(piece)
+            buffer += piece
+            parts = _SENTENCE_END.split(buffer)
+            buffer = parts.pop()
+            for part in parts:
+                if part.strip():
+                    say(part.strip())
+            if chunk.get("done"):
+                break
+    if buffer.strip():
+        say(buffer.strip())
+    return "".join(words).strip()
+
+
+def warm() -> bool:
+    """Load the model into memory now, so the first question is not the slow one."""
     try:
-        reply = ask(messages)
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode(errors="replace").strip()
-        print(f"Ollama answered {error.code}.")
-        if detail:
-            print(detail)
-        messages.pop()
-        return None
+        with urllib.request.urlopen(_request([], False, {}), timeout=180) as response:
+            response.read()
     except urllib.error.URLError:
-        print("Friday cannot reach Ollama at http://127.0.0.1:11434.")
-        print("Start Ollama, then run this again.")
-        messages.pop()
-        return None
-    messages.append({"role": "assistant", "content": reply})
-    return reply
-
-
-def _search_line(reply: str) -> str | None:
-    match = re.search(r"SEARCH:\s*(.+)", reply, re.IGNORECASE)
-    if not match:
-        return None
-    query = match.group(1).strip().splitlines()[0].strip(" .")
-    return query or None
-
-
-def _plain(text: str) -> str:
-    return text.lower().strip(" .!?,")
-
-
-def _agrees(text: str) -> bool:
-    word = _plain(text)
-    return word in YES_WORDS or word.startswith(("yes ", "yeah ", "sure ", "please ", "ok ", "okay "))
-
-
-def _declines(text: str) -> bool:
-    word = _plain(text)
-    return word in NO_WORDS or word.startswith(("no ", "don't ", "do not "))
-
-
-# Measured and live facts. The small model states these with confidence even when it is wrong.
-_MEASURED = re.compile(
-    r"\b(how (tall|high|old|far|long|much|many)|who won|who (is|was)|weather|price of|score|"
-    r"what(?:'s| is) the (weather|price|score|population|height))\b",
-    re.IGNORECASE,
-)
-_ABOUT_US = re.compile(r"\bwho (are you|am i|is friday)\b", re.IGNORECASE)
-_ADMITS_UNKNOWN = re.compile(
-    r"\b(don'?t know|do not know|don'?t have (any )?information|do not have (any )?information|"
-    r"no information|not sure|never heard)\b",
-    re.IGNORECASE,
-)
-
-
-def _needs_lookup(text: str) -> bool:
-    if _ABOUT_US.search(text):
         return False
-    return _MEASURED.search(text) is not None
+    return True
 
 
-def _explicit_lookup(text: str) -> str | None:
-    """He already asked for a search, so there is nothing left to confirm."""
-    if not re.search(r"\b(google|look up|lookup|search for|search)\b", text, re.IGNORECASE):
-        return None
-    query = re.sub(r"\b(google|look up|lookup|search for|search)\b", " ", text, flags=re.IGNORECASE)
-    query = " ".join(query.split()).strip(" ,.?!")
-    return query or None
+def _one_line(text: str) -> str:
+    line = text.strip().splitlines()[0] if text.strip() else ""
+    return line.removeprefix("->").strip().strip("\"'").strip()
 
 
-def _from_notes(query: str, notes: str) -> str | None:
-    messages = [
-        {"role": "system", "content": CRISP},
-        {"role": "user", "content": f"Question: {query}\n\nNotes:\n{notes}"},
-    ]
-    try:
-        return ask(messages)
-    except (urllib.error.HTTPError, urllib.error.URLError):
-        print("Friday cannot reach Ollama at http://127.0.0.1:11434.")
-        return None
+def _talk(messages: list[dict]) -> str:
+    lines = []
+    for message in messages[1:][-4:]:
+        who = "Sir" if message["role"] == "user" else "Friday"
+        lines.append(f"{who}: {message['content']}")
+    return "\n".join(lines)
 
 
-def lookup(query: str) -> str | None:
-    """Search, then ask the model for a short answer that stays inside the notes."""
-    print(f"Looking up: {query}")
+def _route(messages: list[dict], text: str) -> str | None:
+    """The model's own call: the search words this line needs, or None."""
+    talk = _talk(messages[:-1])
+    content = (f"Conversation so far:\n{talk}\n\n" if talk else "") + f"Line: {text} ->"
+    reply = _one_line(
+        ask(
+            [{"role": "system", "content": route_prompt()}, {"role": "user", "content": content}],
+            temperature=0,
+            num_predict=24,
+        )
+    )
+    return None if not reply or reply.upper().startswith("NONE") else reply
+
+
+def _judge(question: str, results: str) -> str | None:
+    """YES when the results answer the question, better search words when they miss, None when stuck."""
+    reply = _one_line(
+        ask(
+            [
+                {"role": "system", "content": judge_prompt()},
+                {"role": "user", "content": f"Question: {question}\nResults: {results}\nReply:"},
+            ],
+            temperature=0,
+            num_predict=24,
+        )
+    )
+    if reply.upper().startswith("YES"):
+        return "YES"
+    # The 3B sometimes repeats the instruction before the words, as in "better search words: ...".
+    words = reply.rsplit(":", 1)[-1].strip()
+    return None if not words or words.upper() in {"NO", "NONE"} else words
+
+
+def _same_subject(question: str, words: str) -> bool:
+    """A new search must share a real word with the question, or the 3B has drifted to its examples."""
+    def key(text: str) -> set[str]:
+        return {word for word in re.findall(r"[a-z0-9]+", text.lower()) if len(word) > 3}
+
+    return bool(key(question) & key(words))
+
+
+def _results(query: str) -> str:
     try:
         notes = web_search(query)
     except OSError as error:
-        print(error)
-        return "I could not reach the search, Sir."
-    if not notes:
-        return "I could not find that, Sir. Say it once more."
-    return _from_notes(query, notes)
+        return f"The search failed: {error}"
+    return notes or "No results."
 
 
-def _missed(spoken: str | None) -> bool:
-    if not spoken:
-        return False
-    lowered = spoken.lower()
-    return "could not find" in lowered or "couldn't find" in lowered
+def _recent(messages: list[dict]) -> list[dict]:
+    return [messages[0], *messages[1:][-RECENT_MESSAGES:]]
 
 
-def _remember(messages: list[dict], user_line: str, spoken: str | None) -> tuple[str | None, str | None]:
-    if spoken and _missed(spoken):
-        spoken = "I could not find that, Sir. Say it once more."
-        messages.append({"role": "user", "content": user_line})
-        messages.append({"role": "assistant", "content": spoken})
-        return spoken, RETRY
-    if spoken:
-        messages.append({"role": "user", "content": user_line})
-        messages.append({"role": "assistant", "content": spoken})
-    return spoken, None
+def _flat(text: str) -> str:
+    return " ".join(text.split())
 
 
-def handle_turn(messages: list[dict], text: str, pending: str | None) -> tuple[str | None, str | None]:
-    """One thing Sir said.
+def _think(messages: list[dict], text: str, offered: str | None, say: Say | None) -> tuple[str, str | None]:
+    query = _route(messages, text)
+    if query is None:
+        return ask(_recent(messages), say), None
+    if offered is None and not _ASKED.search(text):
+        return f"I don't know that offhand, Sir. Shall I look up {query}?", query
 
-    pending is a search he has not accepted yet.
-    RETRY means the last search found nothing, and this line is the question said again.
+    if say is not None:
+        say("One moment, Sir.")
+    question = query
+    tried: list[str] = []
+    found: list[str] = []
+    while len(tried) < MAX_SEARCHES:
+        if tried and say is not None:
+            say("Let me try that another way, Sir.")
+        print(f"Looking up: {query}")
+        results = _results(query)
+        tried.append(query)
+        found.append(f"For {query}:\n{results}")
+        verdict = _judge(question, results)
+        if verdict is None or verdict == "YES" or verdict in tried or not _same_subject(question, verdict):
+            break
+        query = verdict
+    # The results are for this one answer. The conversation keeps only what she said.
+    notes = {"role": "system", "content": ANSWER.format(question=question, results="\n\n".join(found))}
+    return ask([*_recent(messages), notes], say), None
+
+
+def handle_turn(
+    messages: list[dict],
+    text: str,
+    offered: str | None,
+    say: Say | None = None,
+) -> tuple[str | None, str | None]:
+    """One thing Sir said. Returns Friday's reply, and the search she offered, if any.
+
+    offered is the search she offered on the last turn. The model reads his
+    reply to that offer and decides itself whether it was a yes.
+    With say, every word Friday speaks goes through it, a sentence at a time.
     """
-    if pending == RETRY:
-        if _declines(text):
-            spoken = "All right, Sir."
-            messages.append({"role": "user", "content": text})
-            messages.append({"role": "assistant", "content": spoken})
-            return spoken, None
-        if _agrees(text):
-            return "Say the question once more, Sir.", RETRY
-        spoken = lookup(text)
-        if _missed(spoken):
-            messages.append({"role": "user", "content": text})
-            messages.append({"role": "assistant", "content": "I could not find that, Sir."})
-            return "I could not find that, Sir.", None
-        return _remember(messages, text, spoken)
+    messages[0] = {"role": "system", "content": system_prompt()}
+    messages.append({"role": "user", "content": text})
+    spoken: list[str] = []
 
-    if pending:
-        if _agrees(text):
-            return _remember(messages, f"Yes, look up {pending}.", lookup(pending))
-        if _declines(text):
-            spoken = "All right, Sir."
-            messages.append({"role": "user", "content": text})
-            messages.append({"role": "assistant", "content": spoken})
-            return spoken, None
-        pending = None
+    def out(sentence: str) -> None:
+        spoken.append(sentence)
+        say(sentence)
 
-    query = _explicit_lookup(text)
-    if query:
-        return _remember(messages, text, lookup(query))
-
-    if _needs_lookup(text):
-        messages.append({"role": "user", "content": text})
-        spoken = "I don't know that, Sir. I can look it up if you want."
-        messages.append({"role": "assistant", "content": spoken})
-        return spoken, text
-
-    reply = take_turn(messages, text)
-    if not reply:
+    try:
+        reply, offer = _think(messages, text, offered, out if say is not None else None)
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode(errors="replace").strip()
+        print(f"Ollama answered {error.code}. {detail}")
+        messages.pop()
         return None, None
-    query = _search_line(reply)
-    if not query and not _ADMITS_UNKNOWN.search(reply):
-        return reply, None
-    messages.pop()
-    spoken = "I don't know that, Sir. I can look it up if you want."
-    messages.append({"role": "assistant", "content": spoken})
-    return spoken, query or text
+    except urllib.error.URLError:
+        print("Friday cannot reach Ollama at http://127.0.0.1:11434. Start Ollama, then run this again.")
+        messages.pop()
+        return None, None
+    reply = reply or "Sorry, Sir, I lost my thought. Say that again?"
+    messages.append({"role": "assistant", "content": reply})
+    if say is not None and not _flat(" ".join(spoken)).endswith(_flat(reply)):
+        say(reply)
+    return reply, offer
 
 
 def main() -> None:
     messages = [{"role": "system", "content": system_prompt()}]
-    pending: str | None = None
+    offered: str | None = None
     print("Friday is here. Type a message, Sir. Type exit to stop.")
     while True:
         try:
@@ -242,7 +241,7 @@ def main() -> None:
             continue
         if text.lower() in {"exit", "quit"}:
             break
-        reply, pending = handle_turn(messages, text, pending)
+        reply, offered = handle_turn(messages, text, offered)
         if reply:
             print(f"Friday: {reply}")
 
